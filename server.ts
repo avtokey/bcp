@@ -8,6 +8,11 @@ import multer from "multer";
 import fs from "fs";
 import dns from "dns";
 
+// Prefer IPv4 globally to avoid ENETUNREACH on IPv6-only hosts like Supabase on Render
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
+
 const { Pool } = pg;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -33,11 +38,7 @@ const pool = new Pool({
   ssl: {
     rejectUnauthorized: false
   },
-  connectionTimeoutMillis: 10000,
-  // Force IPv4 resolution
-  lookup: (hostname, options, callback) => {
-    dns.lookup(hostname, { family: 4 }, callback);
-  }
+  connectionTimeoutMillis: 10000
 });
 
 pool.on('error', (err) => {

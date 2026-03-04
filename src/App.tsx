@@ -45,6 +45,7 @@ export default function App() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
+  const [modalRemoteAccess, setModalRemoteAccess] = useState<boolean | null>(null);
   const [modalProblemType, setModalProblemType] = useState<string>('');
   const [modalOtherDetails, setModalOtherDetails] = useState<string>('');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -52,6 +53,7 @@ export default function App() {
   const [showDbModal, setShowDbModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const handleDbUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -101,8 +103,13 @@ export default function App() {
 
   useEffect(() => {
     if (selectedStaff) {
+      setModalRemoteAccess(selectedStaff.remote_access === 1);
       setModalProblemType(selectedStaff.problem_type || '');
       setModalOtherDetails(selectedStaff.other_details || '');
+    } else {
+      setModalRemoteAccess(null);
+      setModalProblemType('');
+      setModalOtherDetails('');
     }
   }, [selectedStaff]);
 
@@ -117,6 +124,7 @@ export default function App() {
   };
 
   const handleStatusUpdate = async (id: number, remoteAccess: boolean, problemType?: string, otherDetails?: string) => {
+    setSaving(true);
     try {
       const res = await fetch(`/api/staff/${id}/status`, {
         method: 'POST',
@@ -129,15 +137,18 @@ export default function App() {
       });
       const data = await res.json();
       if (data.success) {
-        fetchData();
+        await fetchData();
         setSelectedStaff(null);
       }
     } catch (err) {
       console.error('Failed to update status:', err);
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleBulkVerify = async () => {
+    setSaving(true);
     try {
       const res = await fetch('/api/staff/bulk-verify', {
         method: 'POST',
@@ -146,12 +157,14 @@ export default function App() {
       });
       const data = await res.json();
       if (data.success) {
-        fetchData();
+        await fetchData();
         setSelectedIds(new Set());
         setShowBulkConfirm(false);
       }
     } catch (err) {
       console.error('Failed bulk update:', err);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -541,23 +554,32 @@ export default function App() {
                     <label className="block text-sm font-bold text-slate-700 mb-3">Do you have remote access?</label>
                     <div className="grid grid-cols-2 gap-3">
                       <button
-                        onClick={() => handleStatusUpdate(selectedStaff.id, true)}
+                        disabled={saving}
+                        onClick={() => {
+                          setModalRemoteAccess(true);
+                          handleStatusUpdate(selectedStaff.id, true);
+                        }}
                         className={`flex items-center justify-center gap-2 p-4 rounded-2xl border-2 transition-all cursor-pointer ${
-                          selectedStaff.remote_access === 1 
+                          modalRemoteAccess === true 
                             ? 'border-emerald-500 bg-emerald-50 text-emerald-700' 
                             : 'border-slate-100 hover:border-emerald-200'
-                        }`}
+                        } ${saving ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
-                        <CheckCircle2 size={20} />
+                        {saving && modalRemoteAccess === true ? (
+                          <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <CheckCircle2 size={20} />
+                        )}
                         <span className="font-bold">YES</span>
                       </button>
                       <button
-                        onClick={() => handleStatusUpdate(selectedStaff.id, false, selectedStaff.problem_type || '', selectedStaff.other_details || '')}
+                        disabled={saving}
+                        onClick={() => setModalRemoteAccess(false)}
                         className={`flex items-center justify-center gap-2 p-4 rounded-2xl border-2 transition-all cursor-pointer ${
-                          selectedStaff.remote_access === 0 && selectedStaff.problem_type !== 'verification_requested'
+                          modalRemoteAccess === false
                             ? 'border-rose-500 bg-rose-50 text-rose-700' 
                             : 'border-slate-100 hover:border-rose-200'
-                        }`}
+                        } ${saving ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
                         <AlertCircle size={20} />
                         <span className="font-bold">NO</span>
@@ -565,7 +587,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {selectedStaff.remote_access === 0 && selectedStaff.problem_type !== 'verification_requested' && (
+                  {modalRemoteAccess === false && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
@@ -574,12 +596,13 @@ export default function App() {
                       <div>
                         <label className="block text-sm font-bold text-slate-700 mb-3">What is the problem?</label>
                         <select
+                          disabled={saving}
                           value={modalProblemType}
                           onChange={(e) => setModalProblemType(e.target.value)}
-                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all disabled:opacity-50"
                         >
                           <option value="">Select a problem...</option>
-                          {PROBLEM_TYPES.map(prob => (
+                          {PROBLEM_TYPES.filter(p => p.id !== 'verification_requested').map(prob => (
                             <option key={prob.id} value={prob.id}>{prob.label}</option>
                           ))}
                         </select>
@@ -592,19 +615,24 @@ export default function App() {
                         >
                           <label className="block text-sm font-bold text-slate-700 mb-2">Please specify</label>
                           <textarea
+                            disabled={saving}
                             value={modalOtherDetails}
                             onChange={(e) => setModalOtherDetails(e.target.value)}
                             placeholder="Enter details here..."
-                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all min-h-[100px]"
+                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all min-h-[100px] disabled:opacity-50"
                           />
                         </motion.div>
                       )}
 
                       <button
+                        disabled={saving || !modalProblemType}
                         onClick={() => handleStatusUpdate(selectedStaff.id, false, modalProblemType, modalOtherDetails)}
-                        className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg cursor-pointer"
+                        className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        Save Status
+                        {saving ? (
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : null}
+                        {saving ? 'Saving...' : 'Save Status'}
                       </button>
                     </motion.div>
                   )}
@@ -735,10 +763,14 @@ export default function App() {
                   Cancel
                 </button>
                 <button
+                  disabled={saving}
                   onClick={handleBulkVerify}
-                  className="flex-1 bg-slate-900 text-white px-4 py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg"
+                  className="flex-1 bg-slate-900 text-white px-4 py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  Confirm
+                  {saving ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : null}
+                  {saving ? 'Processing...' : 'Confirm'}
                 </button>
               </div>
             </motion.div>
