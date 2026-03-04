@@ -1,132 +1,123 @@
-import React, { useState, useEffect } from 'react';
-import { Search, CheckCircle2, AlertCircle, User, ShieldCheck, ShieldAlert, ChevronRight, X } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Search, 
+  CheckCircle2, 
+  AlertCircle, 
+  Clock, 
+  ChevronRight, 
+  ShieldAlert,
+  UserCheck,
+  Laptop,
+  Wifi,
+  Key,
+  Monitor,
+  AlertTriangle,
+  Flame
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Staff {
   id: number;
   name: string;
   department: string;
-  staff_info: string | null;
+  staff_info: string;
   remote_access: number;
   problem_type: string | null;
   other_details: string | null;
   updated_at: string;
 }
 
+const PROBLEM_TYPES = [
+  { id: 'cert', label: 'Certificate Problem', icon: Key, color: 'text-amber-600', bg: 'bg-amber-50' },
+  { id: 'vpn', label: 'VPN Problem', icon: Wifi, color: 'text-orange-600', bg: 'bg-orange-50' },
+  { id: 'rdp', label: 'RDP Problem', icon: Monitor, color: 'text-purple-600', bg: 'bg-purple-50' },
+  { id: 'burnt', label: 'Burn Computer', icon: Flame, color: 'text-red-600', bg: 'bg-red-50' },
+  { id: 'other', label: 'Other Issue', icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50' },
+];
+
 export default function App() {
   const [staff, setStaff] = useState<Staff[]>([]);
-  const [lastGlobalUpdate, setLastGlobalUpdate] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
+  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [collapsedDepts, setCollapsedDepts] = useState<Set<string>>(new Set());
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
+  const [modalProblemType, setModalProblemType] = useState<string>('');
+  const [modalOtherDetails, setModalOtherDetails] = useState<string>('');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Form state
-  const [remoteAccess, setRemoteAccess] = useState<boolean>(true);
-  const [problemType, setProblemType] = useState<string>('');
-  const [otherDetails, setOtherDetails] = useState<string>('');
-
-  useEffect(() => {
-    fetchStaff();
-  }, []);
-
-  const fetchStaff = async () => {
+  const fetchData = async () => {
     try {
       const res = await fetch('/api/staff');
       const data = await res.json();
       setStaff(data.staff);
-      setLastGlobalUpdate(data.lastUpdate);
+      setLastUpdate(data.lastUpdate);
     } catch (err) {
-      console.error('Failed to fetch staff', err);
+      console.error('Failed to fetch staff:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSelectStaff = (person: Staff) => {
-    setSelectedStaff(person);
-    setRemoteAccess(person.remote_access === 1);
-    setProblemType(person.problem_type || '');
-    setOtherDetails(person.other_details || '');
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  useEffect(() => {
+    if (selectedStaff) {
+      setModalProblemType(selectedStaff.problem_type || '');
+      setModalOtherDetails(selectedStaff.other_details || '');
+    }
+  }, [selectedStaff]);
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedStaff) return;
-
-    setUpdating(true);
+  const handleStatusUpdate = async (id: number, remoteAccess: boolean, problemType?: string, otherDetails?: string) => {
     try {
-      const res = await fetch(`/api/staff/${selectedStaff.id}/status`, {
+      const res = await fetch(`/api/staff/${id}/status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           remote_access: remoteAccess,
-          problem_type: remoteAccess ? null : problemType,
-          other_details: remoteAccess ? null : otherDetails
+          problem_type: problemType,
+          other_details: otherDetails
         })
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        setLastGlobalUpdate(data.lastUpdate);
-        await fetchStaff();
+      const data = await res.json();
+      if (data.success) {
+        fetchData();
         setSelectedStaff(null);
       }
     } catch (err) {
-      console.error('Update failed', err);
-    } finally {
-      setUpdating(false);
+      console.error('Failed to update status:', err);
     }
   };
 
-  const filteredStaff = staff.filter(s => 
-    s.name.toLowerCase().includes(search.toLowerCase()) ||
-    (s.department && s.department.toLowerCase().includes(search.toLowerCase())) ||
-    (s.staff_info && s.staff_info.toLowerCase().includes(search.toLowerCase()))
-  );
-
-  // Group staff by department
-  const groupedStaff = filteredStaff.reduce((acc, person) => {
-    const dept = person.department || 'Other';
-    if (!acc[dept]) acc[dept] = [];
-    acc[dept].push(person);
-    return acc;
-  }, {} as Record<string, Staff[]>);
-
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return 'Never';
-    const date = new Date(dateStr);
-    return date.toLocaleString('ka-GE', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
   const handleBulkVerify = async () => {
-    setUpdating(true);
     try {
       const res = await fetch('/api/staff/bulk-verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: Array.from(selectedIds) })
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        setLastGlobalUpdate(data.lastUpdate);
-        await fetchStaff();
+      const data = await res.json();
+      if (data.success) {
+        fetchData();
         setSelectedIds(new Set());
         setShowBulkConfirm(false);
       }
     } catch (err) {
-      console.error('Bulk update failed', err);
-    } finally {
-      setUpdating(false);
+      console.error('Failed bulk update:', err);
     }
   };
 
@@ -141,186 +132,448 @@ export default function App() {
     setSelectedIds(newSelected);
   };
 
+  const toggleDept = (dept: string) => {
+    const newCollapsed = new Set(collapsedDepts);
+    if (newCollapsed.has(dept)) {
+      newCollapsed.delete(dept);
+    } else {
+      newCollapsed.add(dept);
+    }
+    setCollapsedDepts(newCollapsed);
+  };
+
+  const filteredStaff = useMemo(() => {
+    return staff.filter(s => {
+      const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.staff_info.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      if (!matchesSearch) return false;
+
+      if (filterStatus === 'all') return true;
+      if (filterStatus === 'ok') return s.remote_access === 1;
+      if (filterStatus === 'cert') return s.problem_type === 'cert';
+      if (filterStatus === 'vpn') return s.problem_type === 'vpn';
+      if (filterStatus === 'rdp') return s.problem_type === 'rdp';
+      if (filterStatus === 'burnt') return s.problem_type === 'burnt';
+      if (filterStatus === 'pending') return s.problem_type === 'verification_requested';
+      if (filterStatus === 'other') return s.problem_type === 'other';
+      
+      return true;
+    });
+  }, [staff, searchQuery, filterStatus]);
+
+  const groupedStaff = useMemo(() => {
+    const groups: Record<string, Staff[]> = {};
+    filteredStaff.forEach(s => {
+      if (!groups[s.department]) groups[s.department] = [];
+      groups[s.department].push(s);
+    });
+    return groups;
+  }, [filteredStaff]);
+
+  const departments = Object.keys(groupedStaff).sort((a, b) => {
+    if (a === "საბანკო სერვისების განვითარების დეპარტამენტი") return -1;
+    if (b === "საბანკო სერვისების განვითარების დეპარტამენტი") return 1;
+    return a.localeCompare(b);
+  });
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-slate-500 font-medium">Loading BCP Tracker...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans">
+    <div className="min-h-screen bg-slate-50 pb-20">
       {/* Header */}
-      <header className="bg-white border-b border-zinc-200 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <ShieldCheck className="text-emerald-600" />
+            <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <ShieldAlert className="text-emerald-600" />
               Liberty Bank BCP Tracker
             </h1>
-            <div className="mt-1 space-y-0.5">
-              <p className="text-zinc-500 text-sm">Incident Status Monitoring</p>
-              <p className="text-zinc-400 text-xs font-medium">
-                Last Update Date Time: <span className="text-zinc-600">{formatDate(lastGlobalUpdate)}</span>
+            {lastUpdate && (
+              <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                <Clock size={12} />
+                Last Update Date Time: {formatDate(lastUpdate)}
               </p>
-            </div>
-          </div>
-          <div className="text-right flex flex-col items-end gap-2">
-            <div className="flex items-center gap-2">
-              <div className="text-right">
-                <div className="text-xs font-mono text-zinc-400 uppercase tracking-widest">Status</div>
-                <div className="text-sm font-medium text-emerald-600">Active Monitoring</div>
-              </div>
-            </div>
-            {selectedIds.size > 0 && (
-              <motion.button
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                onClick={() => setShowBulkConfirm(true)}
-                className="bg-zinc-900 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg hover:bg-zinc-800 transition-all flex items-center gap-2"
-              >
-                <ShieldCheck size={16} />
-                Request Verification ({selectedIds.size})
-              </motion.button>
             )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {selectedIds.size > 0 && (
+              <button
+                onClick={() => setShowBulkConfirm(true)}
+                className="bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 hover:bg-slate-800 transition-colors shadow-lg cursor-pointer"
+              >
+                <UserCheck size={16} />
+                Request Verification ({selectedIds.size})
+              </button>
+            )}
+            <div className="relative flex-1 md:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                type="text"
+                placeholder="Search staff..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-slate-100 border-transparent rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-emerald-500 transition-all"
+              />
+            </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-8">
         {/* Counters */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-8">
-          <div className="bg-white border border-emerald-100 rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center">
-            <div className="text-2xl font-bold text-emerald-600">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-8">
+          <button
+            onClick={() => setFilterStatus('all')}
+            title="დააჭირეთ დაფილტვრისთვის"
+            className={`relative rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
+              filterStatus === 'all' 
+                ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-slate-900 ring-offset-2' 
+                : 'bg-white border border-slate-200 hover:border-slate-300'
+            }`}
+          >
+            <div className={`text-2xl font-bold ${filterStatus === 'all' ? 'text-white' : 'text-slate-900'}`}>
+              {staff.length}
+            </div>
+            <div className={`text-[10px] font-bold uppercase tracking-wider mt-1 ${filterStatus === 'all' ? 'text-slate-300' : 'text-zinc-400'}`}>ALL</div>
+          </button>
+
+          <button
+            onClick={() => setFilterStatus('ok')}
+            title="დააჭირეთ დაფილტვრისთვის"
+            className={`relative rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
+              filterStatus === 'ok' 
+                ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-600 ring-offset-2' 
+                : 'bg-white border border-emerald-100 hover:border-emerald-200'
+            }`}
+          >
+            <div className={`text-2xl font-bold ${filterStatus === 'ok' ? 'text-white' : 'text-emerald-600'}`}>
               {staff.filter(s => s.remote_access === 1).length}
             </div>
-            <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mt-1">Remote OK</div>
-          </div>
-          <div className="bg-white border border-rose-100 rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center">
-            <div className="text-2xl font-bold text-rose-600">
+            <div className={`text-[10px] font-bold uppercase tracking-wider mt-1 ${filterStatus === 'ok' ? 'text-emerald-100' : 'text-zinc-400'}`}>Remote OK</div>
+          </button>
+
+          <button
+            onClick={() => setFilterStatus('cert')}
+            title="დააჭირეთ დაფილტვრისთვის"
+            className={`relative rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
+              filterStatus === 'cert' 
+                ? 'bg-amber-600 text-white border-amber-600 ring-2 ring-amber-600 ring-offset-2' 
+                : 'bg-white border border-amber-100 hover:border-amber-200'
+            }`}
+          >
+            <div className={`text-2xl font-bold ${filterStatus === 'cert' ? 'text-white' : 'text-amber-600'}`}>
               {staff.filter(s => s.problem_type === 'cert').length}
             </div>
-            <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mt-1">Cert Prob</div>
-          </div>
-          <div className="bg-white border border-rose-100 rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center">
-            <div className="text-2xl font-bold text-rose-600">
+            <div className={`text-[10px] font-bold uppercase tracking-wider mt-1 ${filterStatus === 'cert' ? 'text-amber-100' : 'text-zinc-400'}`}>Cert Prob</div>
+          </button>
+
+          <button
+            onClick={() => setFilterStatus('vpn')}
+            title="დააჭირეთ დაფილტვრისთვის"
+            className={`relative rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
+              filterStatus === 'vpn' 
+                ? 'bg-orange-600 text-white border-orange-600 ring-2 ring-orange-600 ring-offset-2' 
+                : 'bg-white border border-orange-100 hover:border-orange-200'
+            }`}
+          >
+            <div className={`text-2xl font-bold ${filterStatus === 'vpn' ? 'text-white' : 'text-orange-600'}`}>
               {staff.filter(s => s.problem_type === 'vpn').length}
             </div>
-            <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mt-1">VPN Prob</div>
-          </div>
-          <div className="bg-white border border-rose-100 rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center">
-            <div className="text-2xl font-bold text-rose-600">
+            <div className={`text-[10px] font-bold uppercase tracking-wider mt-1 ${filterStatus === 'vpn' ? 'text-orange-100' : 'text-zinc-400'}`}>VPN Prob</div>
+          </button>
+
+          <button
+            onClick={() => setFilterStatus('rdp')}
+            title="დააჭირეთ დაფილტვრისთვის"
+            className={`relative rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
+              filterStatus === 'rdp' 
+                ? 'bg-purple-600 text-white border-purple-600 ring-2 ring-purple-600 ring-offset-2' 
+                : 'bg-white border border-purple-100 hover:border-purple-200'
+            }`}
+          >
+            <div className={`text-2xl font-bold ${filterStatus === 'rdp' ? 'text-white' : 'text-purple-600'}`}>
               {staff.filter(s => s.problem_type === 'rdp').length}
             </div>
-            <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mt-1">RDP Prob</div>
-          </div>
-          <div className="bg-white border border-rose-100 rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center">
-            <div className="text-2xl font-bold text-rose-600">
-              {staff.filter(s => s.problem_type === 'other').length}
+            <div className={`text-[10px] font-bold uppercase tracking-wider mt-1 ${filterStatus === 'rdp' ? 'text-purple-100' : 'text-zinc-400'}`}>RDP Prob</div>
+          </button>
+
+          <button
+            onClick={() => setFilterStatus('burnt')}
+            title="დააჭირეთ დაფილტვრისთვის"
+            className={`relative rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
+              filterStatus === 'burnt' 
+                ? 'bg-red-600 text-white border-red-600 ring-2 ring-red-600 ring-offset-2' 
+                : 'bg-white border border-red-100 hover:border-red-200'
+            }`}
+          >
+            <div className={`text-2xl font-bold ${filterStatus === 'burnt' ? 'text-white' : 'text-red-600'}`}>
+              {staff.filter(s => s.problem_type === 'burnt').length}
             </div>
-            <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mt-1">Other Issue</div>
-          </div>
-          <div className="bg-white border border-blue-100 rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center">
-            <div className="text-2xl font-bold text-blue-600">
+            <div className={`text-[10px] font-bold uppercase tracking-wider mt-1 ${filterStatus === 'burnt' ? 'text-red-100' : 'text-zinc-400'}`}>Burn Comp</div>
+          </button>
+
+          <button
+            onClick={() => setFilterStatus('pending')}
+            title="დააჭირეთ დაფილტვრისთვის"
+            className={`relative rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
+              filterStatus === 'pending' 
+                ? 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-600 ring-offset-2' 
+                : 'bg-white border border-blue-100 hover:border-blue-200'
+            }`}
+          >
+            <div className={`text-2xl font-bold ${filterStatus === 'pending' ? 'text-white' : 'text-blue-600'}`}>
               {staff.filter(s => s.problem_type === 'verification_requested').length}
             </div>
-            <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mt-1">Pending Verify</div>
-          </div>
-        </div>
+            <div className={`text-[10px] font-bold uppercase tracking-wider mt-1 ${filterStatus === 'pending' ? 'text-blue-100' : 'text-zinc-400'}`}>Pending Verify</div>
+          </button>
 
-        {/* Search */}
-        <div className="relative mb-8">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Search by name, ID, email or department..."
-            className="w-full pl-12 pr-4 py-4 bg-white border border-zinc-200 rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-lg"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <button
+            onClick={() => setFilterStatus('other')}
+            title="დააჭირეთ დაფილტვრისთვის"
+            className={`relative rounded-2xl p-4 shadow-sm flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
+              filterStatus === 'other' 
+                ? 'bg-rose-600 text-white border-rose-600 ring-2 ring-rose-600 ring-offset-2' 
+                : 'bg-white border border-rose-100 hover:border-rose-200'
+            }`}
+          >
+            <div className={`text-2xl font-bold ${filterStatus === 'other' ? 'text-white' : 'text-rose-600'}`}>
+              {staff.filter(s => s.problem_type === 'other').length}
+            </div>
+            <div className={`text-[10px] font-bold uppercase tracking-wider mt-1 ${filterStatus === 'other' ? 'text-rose-100' : 'text-zinc-400'}`}>Other Issue</div>
+          </button>
         </div>
 
         {/* Staff List */}
         <div className="space-y-8">
-          {loading ? (
-            <div className="text-center py-12 text-zinc-400">Loading staff list...</div>
-          ) : Object.keys(groupedStaff).length > 0 ? (
-            (Object.entries(groupedStaff) as [string, Staff[]][]).map(([dept, members]) => (
-              <div key={dept} className="space-y-3">
-                <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-widest px-1">
+          {departments.map(dept => (
+            <section key={dept}>
+              <button 
+                onClick={() => toggleDept(dept)}
+                className="w-full text-left text-sm font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center justify-between group cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <motion.div
+                    animate={{ rotate: collapsedDepts.has(dept) ? 0 : 90 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <ChevronRight size={16} className="text-emerald-500" />
+                  </motion.div>
                   {dept}
-                </h2>
-                <div className="space-y-2">
-                  {members.map((person) => (
-                    <div key={person.id} className="flex items-center gap-2">
-                      <div 
-                        onClick={(e) => toggleSelect(person.id, e)}
-                        className={`w-6 h-6 rounded-md border-2 flex items-center justify-center cursor-pointer transition-all shrink-0 ${
-                          selectedIds.has(person.id) 
-                            ? 'bg-zinc-900 border-zinc-900 text-white' 
-                            : 'bg-white border-zinc-200 hover:border-zinc-400'
-                        }`}
-                      >
-                        {selectedIds.has(person.id) && <CheckCircle2 size={14} />}
-                      </div>
-                      <motion.button
-                        layout
-                        onClick={() => handleSelectStaff(person)}
-                        className={`flex-1 text-left p-4 rounded-2xl border transition-all flex items-center justify-between group ${
-                          person.remote_access === 1 
-                            ? 'bg-emerald-50 border-emerald-100 hover:bg-emerald-100' 
-                            : person.problem_type === 'verification_requested'
-                              ? 'bg-blue-50 border-blue-100 hover:bg-blue-100'
-                              : 'bg-white border-zinc-200 hover:border-zinc-300'
-                        }`}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                            person.remote_access === 1 
-                              ? 'bg-emerald-200 text-emerald-700' 
-                              : person.problem_type === 'verification_requested'
-                                ? 'bg-blue-200 text-blue-700'
-                                : 'bg-zinc-100 text-zinc-400'
-                          }`}>
-                            <User size={24} />
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-lg leading-tight">{person.name}</h3>
-                            <p className="text-sm text-zinc-500 font-mono mt-0.5">{person.staff_info}</p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-4">
-                          {person.remote_access === 1 ? (
-                            <div className="flex items-center gap-2 text-emerald-600 font-medium bg-emerald-100/50 px-3 py-1 rounded-full text-sm">
-                              <CheckCircle2 size={16} />
-                              <span className="hidden sm:inline">Remote Access OK</span>
-                              <span className="sm:hidden">OK</span>
-                            </div>
-                          ) : person.problem_type === 'verification_requested' ? (
-                            <div className="flex items-center gap-2 text-blue-600 font-medium bg-blue-100/50 px-3 py-1 rounded-full text-sm">
-                              <ShieldCheck size={16} />
-                              <span className="hidden sm:inline">Pending Verification</span>
-                              <span className="sm:hidden">Verify</span>
-                            </div>
-                          ) : person.problem_type ? (
-                            <div className="flex items-center gap-2 text-amber-600 font-medium bg-amber-50 px-3 py-1 rounded-full text-sm">
-                              <AlertCircle size={16} />
-                              <span className="hidden sm:inline">Issue Reported</span>
-                              <span className="sm:hidden">Issue</span>
-                            </div>
-                          ) : (
-                            <div className="text-zinc-400 group-hover:text-zinc-600 transition-colors">
-                              <ChevronRight size={20} />
-                            </div>
-                          )}
-                        </div>
-                      </motion.button>
-                    </div>
-                  ))}
+                  <span className="ml-2 text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full lowercase tracking-normal">
+                    {groupedStaff[dept].length} staff
+                  </span>
                 </div>
-              </div>
-            ))
-          ) : (
-            <div className="text-center py-12 text-zinc-400">No staff members found matching your search.</div>
-          )}
+              </button>
+              
+              <AnimatePresence initial={false}>
+                {!collapsedDepts.has(dept) && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="grid gap-3 pb-2">
+                      {groupedStaff[dept].map(person => {
+                        const isSelected = selectedIds.has(person.id);
+                        const isPending = person.problem_type === 'verification_requested';
+                        
+                        return (
+                          <motion.div
+                            layout
+                            key={person.id}
+                            onClick={() => setSelectedStaff(person)}
+                            className={`group relative bg-white border rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer flex items-center justify-between ${
+                              person.remote_access === 1 ? 'border-emerald-100 bg-emerald-50/30' : 
+                              isPending ? 'border-blue-100 bg-blue-50/30' :
+                              person.problem_type ? 'border-rose-100 bg-rose-50/30' : 'border-slate-200'
+                            } ${isSelected ? 'ring-2 ring-slate-900' : ''}`}
+                          >
+                            <div className="flex items-center gap-4">
+                              <div 
+                                onClick={(e) => toggleSelect(person.id, e)}
+                                className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer ${
+                                  isSelected ? 'bg-slate-900 border-slate-900' : 'border-slate-300 bg-white'
+                                }`}
+                              >
+                                {isSelected && <CheckCircle2 size={14} className="text-white" />}
+                              </div>
+                              <div>
+                                <h3 className="font-bold text-slate-900">{person.name}</h3>
+                                <p className="text-xs text-slate-500">{person.staff_info}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              {person.remote_access === 1 ? (
+                                <div className="flex items-center gap-1.5 text-emerald-600 bg-emerald-100 px-3 py-1 rounded-full text-xs font-bold">
+                                  <CheckCircle2 size={14} />
+                                  REMOTE OK
+                                </div>
+                              ) : isPending ? (
+                                <div className="flex items-center gap-1.5 text-blue-600 bg-blue-100 px-3 py-1 rounded-full text-xs font-bold">
+                                  <Clock size={14} />
+                                  PENDING VERIFY
+                                </div>
+                              ) : person.problem_type ? (
+                                <div className="flex items-center gap-1.5 text-rose-600 bg-rose-100 px-3 py-1 rounded-full text-xs font-bold">
+                                  <AlertCircle size={14} />
+                                  {PROBLEM_TYPES.find(p => p.id === person.problem_type)?.label || 'ISSUE'}
+                                </div>
+                              ) : (
+                                <div className="text-slate-400 text-xs font-bold px-3 py-1 border border-slate-200 rounded-full">
+                                  NOT SET
+                                </div>
+                              )}
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </section>
+          ))}
         </div>
       </main>
 
-      {/* Modal */}
+      {/* Status Update Modal */}
+      <AnimatePresence>
+        {selectedStaff && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedStaff(null)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900">{selectedStaff.name}</h2>
+                    <p className="text-slate-500">{selectedStaff.staff_info}</p>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedStaff(null)}
+                    className="p-2 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
+                  >
+                    <AlertCircle className="rotate-45 text-slate-400" />
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-3">Do you have remote access?</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => handleStatusUpdate(selectedStaff.id, true)}
+                        className={`flex items-center justify-center gap-2 p-4 rounded-2xl border-2 transition-all cursor-pointer ${
+                          selectedStaff.remote_access === 1 
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700' 
+                            : 'border-slate-100 hover:border-emerald-200'
+                        }`}
+                      >
+                        <CheckCircle2 size={20} />
+                        <span className="font-bold">YES</span>
+                      </button>
+                      <button
+                        onClick={() => handleStatusUpdate(selectedStaff.id, false, selectedStaff.problem_type || '', selectedStaff.other_details || '')}
+                        className={`flex items-center justify-center gap-2 p-4 rounded-2xl border-2 transition-all cursor-pointer ${
+                          selectedStaff.remote_access === 0 && selectedStaff.problem_type !== 'verification_requested'
+                            ? 'border-rose-500 bg-rose-50 text-rose-700' 
+                            : 'border-slate-100 hover:border-rose-200'
+                        }`}
+                      >
+                        <AlertCircle size={20} />
+                        <span className="font-bold">NO</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {selectedStaff.remote_access === 0 && selectedStaff.problem_type !== 'verification_requested' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="space-y-4"
+                    >
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-3">What is the problem?</label>
+                        <select
+                          value={modalProblemType}
+                          onChange={(e) => setModalProblemType(e.target.value)}
+                          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                        >
+                          <option value="">Select a problem...</option>
+                          {PROBLEM_TYPES.map(prob => (
+                            <option key={prob.id} value={prob.id}>{prob.label}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {modalProblemType === 'other' && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                        >
+                          <label className="block text-sm font-bold text-slate-700 mb-2">Please specify</label>
+                          <textarea
+                            value={modalOtherDetails}
+                            onChange={(e) => setModalOtherDetails(e.target.value)}
+                            placeholder="Enter details here..."
+                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition-all min-h-[100px]"
+                          />
+                        </motion.div>
+                      )}
+
+                      <button
+                        onClick={() => handleStatusUpdate(selectedStaff.id, false, modalProblemType, modalOtherDetails)}
+                        className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg cursor-pointer"
+                      >
+                        Save Status
+                      </button>
+                    </motion.div>
+                  )}
+
+                  {selectedStaff.problem_type === 'verification_requested' && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
+                      <div className="flex gap-3">
+                        <Clock className="text-blue-600 shrink-0" />
+                        <div>
+                          <p className="text-sm font-bold text-blue-900">Verification Requested</p>
+                          <p className="text-xs text-blue-700 mt-1">IT Support has fixed your issue. Please check your access and update your status to YES if it works.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Bulk Confirmation Modal */}
       <AnimatePresence>
         {showBulkConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -329,168 +582,46 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowBulkConfirm(false)}
-              className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm"
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             />
             <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative z-10"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl p-6"
             >
-              <div className="p-6 bg-amber-50 border-b border-amber-100">
-                <div className="flex items-center gap-3 text-amber-800">
-                  <ShieldAlert size={24} />
-                  <h2 className="text-lg font-bold">IT Support Specialist Warning</h2>
-                </div>
-                <p className="mt-2 text-sm text-amber-700 leading-relaxed">
-                  ამ მოქმედების საშუალება აქვთ მხოლოდ IT support specialist-ებს და გთხოვთ რომ თვითნებურად არ შეუცვალოთ სტატუსი.
-                </p>
-              </div>
-              <div className="p-6 space-y-4">
-                <p className="text-zinc-600">
-                  ნამდვილად გსურთ მონიშნული {selectedIds.size} თანამშრომლისთვის სტატუსის შეცვლა გადამოწმების მოთხოვნით?
-                </p>
+              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 mb-6">
                 <div className="flex gap-3">
-                  <button
-                    onClick={() => setShowBulkConfirm(false)}
-                    className="flex-1 py-3 bg-zinc-100 text-zinc-600 rounded-xl font-bold hover:bg-zinc-200 transition-all"
-                  >
-                    გაუქმება
-                  </button>
-                  <button
-                    onClick={handleBulkVerify}
-                    disabled={updating}
-                    className="flex-1 py-3 bg-zinc-900 text-white rounded-xl font-bold hover:bg-zinc-800 transition-all disabled:opacity-50"
-                  >
-                    {updating ? 'მიმდინარეობს...' : 'დიახ, დადასტურება'}
-                  </button>
+                  <AlertTriangle className="text-amber-600 shrink-0" />
+                  <p className="text-sm font-bold text-amber-900">
+                    ამ მოქმედების საშუალება აქვთ მხოლოდ IT support specialist-ებს და გთხოვთ რომ თვითნებურად არ შეუცვალოთ სტატუსი
+                  </p>
                 </div>
               </div>
-            </motion.div>
-          </div>
-        )}
 
-        {selectedStaff && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedStaff(null)}
-              className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative z-10"
-            >
-              <div className="p-6 border-b border-zinc-100 flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-bold">{selectedStaff.name}</h2>
-                  <p className="text-zinc-500 text-sm">{selectedStaff.department}</p>
-                </div>
-                <button 
-                  onClick={() => setSelectedStaff(null)}
-                  className="p-2 hover:bg-zinc-100 rounded-full transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
+              <h2 className="text-xl font-bold text-slate-900 mb-2">Request Verification?</h2>
+              <p className="text-slate-500 mb-6">
+                Are you sure you want to request verification for {selectedIds.size} selected staff members? Their status will be set to Pending Verification.
+              </p>
 
-              <form onSubmit={handleSubmit} className="p-6 space-y-6">
-                <div>
-                  <label className="block text-sm font-semibold text-zinc-700 mb-3 uppercase tracking-wider">
-                    Remote Access Status
-                  </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setRemoteAccess(true)}
-                      className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
-                        remoteAccess 
-                          ? 'bg-emerald-50 border-emerald-500 text-emerald-700 font-bold' 
-                          : 'bg-white border-zinc-200 text-zinc-400 hover:border-zinc-300'
-                      }`}
-                    >
-                      <ShieldCheck size={20} />
-                      YES
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRemoteAccess(false)}
-                      className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
-                        !remoteAccess 
-                          ? 'bg-rose-50 border-rose-500 text-rose-700 font-bold' 
-                          : 'bg-white border-zinc-200 text-zinc-400 hover:border-zinc-300'
-                      }`}
-                    >
-                      <ShieldAlert size={20} />
-                      NO
-                    </button>
-                  </div>
-                </div>
-
-                <AnimatePresence>
-                  {!remoteAccess && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="space-y-4 overflow-hidden"
-                    >
-                      <div>
-                        <label className="block text-sm font-semibold text-zinc-700 mb-2">Problem Type</label>
-                        <select
-                          value={problemType}
-                          onChange={(e) => setProblemType(e.target.value)}
-                          required={!remoteAccess}
-                          className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
-                        >
-                          <option value="">Select a problem...</option>
-                          <option value="cert">Certificate Problem</option>
-                          <option value="vpn">VPN Connection Problem</option>
-                          <option value="rdp">RDP Access Problem</option>
-                          <option value="other">Other Issue</option>
-                        </select>
-                      </div>
-
-                      {problemType === 'other' && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                        >
-                          <label className="block text-sm font-semibold text-zinc-700 mb-2">Details</label>
-                          <textarea
-                            value={otherDetails}
-                            onChange={(e) => setOtherDetails(e.target.value)}
-                            placeholder="Please describe the issue..."
-                            className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none min-h-[100px]"
-                          />
-                        </motion.div>
-                      )}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
+              <div className="flex gap-3">
                 <button
-                  type="submit"
-                  disabled={updating}
-                  className="w-full py-4 bg-zinc-900 text-white rounded-xl font-bold hover:bg-zinc-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-zinc-200"
+                  onClick={() => setShowBulkConfirm(false)}
+                  className="flex-1 px-4 py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-100 transition-colors"
                 >
-                  {updating ? 'Updating...' : 'Save Status'}
+                  Cancel
                 </button>
-              </form>
+                <button
+                  onClick={handleBulkVerify}
+                  className="flex-1 bg-slate-900 text-white px-4 py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg"
+                >
+                  Confirm
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
-
-      {/* Footer */}
-      <footer className="max-w-4xl mx-auto px-4 py-12 text-center text-zinc-400 text-sm">
-        <p>© 2026 BCP Incident Management Team</p>
-        <p className="mt-1 italic">Confidential - Internal Use Only</p>
-      </footer>
     </div>
   );
 }
