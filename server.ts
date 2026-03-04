@@ -11,8 +11,7 @@ const db = new Database("bcp.db");
 
 // Initialize database
 db.exec(`
-  DROP TABLE IF EXISTS staff;
-  
+
   CREATE TABLE IF NOT EXISTS staff (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
