@@ -6,6 +6,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
 import fs from "fs";
+import dns from "dns";
 
 const { Pool } = pg;
 
@@ -13,12 +14,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Use DATABASE_URL from environment variables
+const dbUrl = process.env.DATABASE_URL;
+
+if (dbUrl) {
+  try {
+    const parsedUrl = new URL(dbUrl);
+    console.log(`[DB Debug] Target Host: ${parsedUrl.hostname}, Port: ${parsedUrl.port || '5432'}`);
+    if (parsedUrl.port === '5432') {
+      console.warn("⚠️ WARNING: You are using port 5432 (Direct Connection). Render.com Free tier often requires the Pooler (port 6543) to work correctly.");
+    }
+  } catch (e) {
+    console.error("[DB Debug] Failed to parse DATABASE_URL");
+  }
+}
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: dbUrl,
   ssl: {
     rejectUnauthorized: false
   },
-  connectionTimeoutMillis: 10000, // 10 seconds timeout
+  connectionTimeoutMillis: 10000,
+  // Force IPv4 resolution
+  lookup: (hostname, options, callback) => {
+    dns.lookup(hostname, { family: 4 }, callback);
+  }
 });
 
 pool.on('error', (err) => {
