@@ -17,15 +17,23 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false
-  }
+  },
+  connectionTimeoutMillis: 10000, // 10 seconds timeout
+});
+
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
 });
 
 const upload = multer({ dest: 'uploads/' });
 
 // Initialize database
 async function initDb() {
-  const client = await pool.connect();
+  console.log("Attempting to connect to database...");
+  let client;
   try {
+    client = await pool.connect();
+    console.log("Successfully connected to PostgreSQL!");
     await client.query(`
       CREATE TABLE IF NOT EXISTS staff (
         id SERIAL PRIMARY KEY,
