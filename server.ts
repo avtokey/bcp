@@ -54,15 +54,19 @@ async function initDb() {
         value TEXT
       )
     `);
+  } catch (err) {
+    console.error("Database initialization failed:", err);
+    throw err;
   } finally {
-    client.release();
+    if (client) client.release();
   }
 }
 
 // Seed initial data
 async function seedInitialData() {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     const dept1 = "საბანკო სერვისების განვითარების დეპარტამენტი";
     const dept2 = "ციფრული ბანკინგის დეპარტამენტი";
     const dept3 = "ბიზნეს ანალიტიკისა და რეპორტინგის დეპარტამენტი (AI გუნდი)";
@@ -502,8 +506,11 @@ async function seedInitialData() {
       await client.query("INSERT INTO app_metadata (key, value) VALUES ('status_seed_v2', 'true') ON CONFLICT (key) DO UPDATE SET value = 'true'");
       await client.query("INSERT INTO app_metadata (key, value) VALUES ('last_global_update', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [new Date().toISOString()]);
     }
+  } catch (err) {
+    console.error("Seeding failed:", err);
+    throw err;
   } finally {
-    client.release();
+    if (client) client.release();
   }
 }
 
