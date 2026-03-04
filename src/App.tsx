@@ -12,7 +12,10 @@ import {
   Key,
   Monitor,
   AlertTriangle,
-  Flame
+  Flame,
+  Database as DatabaseIcon,
+  Download,
+  Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -46,7 +49,38 @@ export default function App() {
   const [modalOtherDetails, setModalOtherDetails] = useState<string>('');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
+  const [showDbModal, setShowDbModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+
+  const handleDbUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('database', file);
+
+    try {
+      const res = await fetch('/api/restore-db', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('Database restored successfully! Refreshing...');
+        window.location.reload();
+      } else {
+        alert('Failed to restore database: ' + data.error);
+      }
+    } catch (err) {
+      console.error('Upload failed:', err);
+      alert('Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+      setShowDbModal(false);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -173,8 +207,21 @@ export default function App() {
   }, [filteredStaff]);
 
   const departments = Object.keys(groupedStaff).sort((a, b) => {
-    if (a === "საბანკო სერვისების განვითარების დეპარტამენტი") return -1;
-    if (b === "საბანკო სერვისების განვითარების დეპარტამენტი") return 1;
+    const order = [
+      "საბანკო სერვისების განვითარების დეპარტამენტი",
+      "ციფრული ბანკინგის დეპარტამენტი",
+      "ბიზნეს ანალიტიკისა და რეპორტინგის დეპარტამენტი (AI გუნდი)",
+      "საკრედიტო სისტემების დეპარტამენტი",
+      "DWH-ის დეპარტამენტი",
+      "პროცესინგის დეპარტამენტი",
+      "ავტომატიზაციის გუნდი"
+    ];
+    const indexA = order.indexOf(a);
+    const indexB = order.indexOf(b);
+    
+    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+    if (indexA !== -1) return -1;
+    if (indexB !== -1) return 1;
     return a.localeCompare(b);
   });
 
@@ -208,6 +255,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowDbModal(true)}
+              title="Database Management"
+              className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all cursor-pointer"
+            >
+              <DatabaseIcon size={20} />
+            </button>
             {selectedIds.size > 0 && (
               <button
                 onClick={() => setShowBulkConfirm(true)}
@@ -567,6 +621,75 @@ export default function App() {
                     </div>
                   )}
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Database Management Modal */}
+      <AnimatePresence>
+        {showDbModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDbModal(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl p-6"
+            >
+              <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                <DatabaseIcon className="text-emerald-600" />
+                Database Management
+              </h2>
+
+              <div className="space-y-4">
+                <a
+                  href="/api/download-db"
+                  className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl hover:bg-emerald-50 hover:border-emerald-200 transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <Download className="text-slate-400 group-hover:text-emerald-600" />
+                    <div>
+                      <p className="font-bold text-slate-900">Download Backup</p>
+                      <p className="text-xs text-slate-500">Save current data to your computer</p>
+                    </div>
+                  </div>
+                </a>
+
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept=".db"
+                    onChange={handleDbUpload}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                    disabled={uploading}
+                  />
+                  <div className={`flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl transition-all ${uploading ? 'opacity-50' : 'hover:bg-amber-50 hover:border-amber-200 group'}`}>
+                    <div className="flex items-center gap-3">
+                      <Upload className={`text-slate-400 ${!uploading && 'group-hover:text-amber-600'}`} />
+                      <div>
+                        <p className="font-bold text-slate-900">{uploading ? 'Uploading...' : 'Restore from Backup'}</p>
+                        <p className="text-xs text-slate-500">Upload a previously saved bcp.db file</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 pt-6 border-t border-slate-100">
+                <button
+                  onClick={() => setShowDbModal(false)}
+                  className="w-full py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                >
+                  Close
+                </button>
               </div>
             </motion.div>
           </div>
