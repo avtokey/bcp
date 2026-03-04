@@ -1,0 +1,5 @@
+{
+  "name": "BCP Remote Access Tracker",
+  "description": "A tool for tracking staff remote access status during BCP incidents.",
+  "requestFramePermissions": []
+}
