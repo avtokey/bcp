@@ -666,7 +666,7 @@ export default function App() {
                 <div className="relative">
                   <input
                     type="file"
-                    accept=".db"
+                    accept=".json"
                     onChange={handleDbUpload}
                     className="absolute inset-0 opacity-0 cursor-pointer"
                     disabled={uploading}
@@ -676,7 +676,7 @@ export default function App() {
                       <Upload className={`text-slate-400 ${!uploading && 'group-hover:text-amber-600'}`} />
                       <div>
                         <p className="font-bold text-slate-900">{uploading ? 'Uploading...' : 'Restore from Backup'}</p>
-                        <p className="text-xs text-slate-500">Upload a previously saved bcp.db file</p>
+                        <p className="text-xs text-slate-500">Upload a previously saved backup.json file</p>
                       </div>
                     </div>
                   </div>
